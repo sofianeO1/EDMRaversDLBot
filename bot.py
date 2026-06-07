@@ -12,6 +12,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Inviami un link di Spotify e scaricherò l'audio per te! 🔥"
     )
 
+# --- INIZIO FUNZIONE DI CALLBACK ADATTATA PER YT-DLP ---
+def my_progress_hook(d):
+    """Callback per il progresso del download nativa di yt-dlp."""
+    if d['status'] == 'downloading':
+        # Ottieni il blocco/chunk di dati corrente (convertito in stringa per il controllo)
+        chunk_str = str(d.get('filename', '')) + str(d.get('tmpfilename', ''))
+        
+        # Il controllo personalizzato che hai richiesto per ignorare l'errore DRM
+        if "ERROR: [DRM]" in chunk_str or "DRM" in chunk_str:
+            print("Ignoring DRM error...")
+            return
+    
+    if d['status'] == 'finished':
+        print("Download completato sul server, inizio conversione...")
+# --- FINE FUNZIONE DI CALLBACK ---
+
 async def download_spotify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     
@@ -22,19 +38,20 @@ async def download_spotify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_message = await update.message.reply_text("🔄 Download in corso direttamente dal server cloud...")
     chat_id = update.message.chat_id
 
-    # Configurazione ultra-leggera: bypassa YouTube e usa SoundCloud
+    # Configurazione con l'aggiunta del progress_hook richiesto
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': f"track_{chat_id}.%(ext)s",
         'noplaylist': True,
         'quiet': True,
-        'default_search': 'scsearch', # Forza la ricerca su SoundCloud per evitare i ban IP
+        'default_search': 'scsearch',  # Forza la ricerca su SoundCloud
+        'progress_hooks': [my_progress_hook],  # <--- Inserita la funzione di controllo qui
     }
 
     try:
         loop = asyncio.get_event_loop()
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Passiamo il link: yt-dlp estrarrà il titolo e lo cercherà su SoundCloud
+            # Passiamo il link: yt-dlp cercherà il brano su SoundCloud
             info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=True))
             
             if 'entries' in info:

@@ -1,20 +1,10 @@
 import os
 import asyncio
-import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import yt_dlp
-import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
 
 TOKEN = os.getenv("BOT_TOKEN")
-
-# Inizializzazione Spotify Leggera (Usa credenziali anonime/pubbliche per i metadati)
-auth_manager = SpotifyClientCredentials(
-    client_id=os.getenv("SPOTIPY_CLIENT_ID", "3f17ef4b91014e77840130d2203254b1"), # Credenziale pubblica di fallback per i titoli
-    client_secret=os.getenv("SPOTIPY_CLIENT_SECRET", "5cc6411be07246b9b3e10fa658d5162f")
-)
-sp = spotipy.Spotify(auth_manager=auth_manager)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -22,73 +12,56 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Inviami un link di Spotify e scaricherò l'audio per te! 🔥"
     )
 
-def get_spotify_track_name(url):
-    try:
-        # Estrae l'ID della traccia dal link
-        track_id = re.search(r"track/([a-zA-Z0-9]+)", url).group(1)
-        track = sp.track(track_id)
-        # Unisce Artista + Titolo (es: "Basswell - Massive Attack")
-        return f"{track['artists'][0]['name']} - {track['name']}"
-    except Exception:
-        return None
-
 async def download_spotify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     
     if "spotify.com" not in url:
-        await update.message.reply_text("❌ Per favore, inviami un link valido di Spotify.")
+        await update.message.reply_text("❌ Per favore, inviami un link valido.")
         return
 
-    status_message = await update.message.reply_text("🔄 Identificazione brano su Spotify...")
-    
-    # 1. Ottieni il titolo pulito della canzone
-    loop = asyncio.get_event_loop()
-    track_name = await loop.run_in_executor(None, get_spotify_track_name, url)
-    
-    if not track_name:
-        await status_message.edit_text("❌ Impossibile leggere i dettagli da questo link Spotify.")
-        return
-
-    await status_message.edit_text(f"🔍 Cerco il flusso audio per:\n*_{track_name}_*...", parse_mode="Markdown")
+    status_message = await update.message.reply_text("🔄 Download in corso direttamente dal server cloud...")
     chat_id = update.message.chat_id
 
-    # 2. Configurazione di download audio nativo (Zero FFmpeg richiesto)
+    # Configurazione nativa: scarica direttamente l'audio senza conversioni FFmpeg
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': f"track_{chat_id}.%(ext)s",
         'noplaylist': True,
         'quiet': True,
+        'default_search': 'ytsearch', # Se il link fallisce, lo usa come ricerca testo
     }
 
     try:
-        # Cerca su YouTube usando il TITOLO PULITO, non il link!
-        search_query = f"ytsearch:{track_name}"
-
+        loop = asyncio.get_event_loop()
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = await loop.run_in_executor(None, lambda: ydl.extract_info(search_query, download=True))
-            if 'entries' in info and len(info['entries']) > 0:
+            # Passiamo il link direttamente a yt-dlp che ha già i suoi sistemi interni per decifrare Spotify
+            info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+            
+            if 'entries' in info:
                 filename = ydl.prepare_filename(info['entries'][0])
+                title = info['entries'][0].get('title', 'EDM Track')
             else:
                 filename = ydl.prepare_filename(info)
+                title = info.get('title', 'EDM Track')
 
         if os.path.exists(filename):
-            await status_message.edit_text("📤 Invio dell'audio in corso...")
+            await status_message.edit_text("📤 File recuperato! Invio alla chat...")
             
             with open(filename, 'rb') as audio_file:
                 await update.message.reply_audio(
                     audio=audio_file,
-                    title=track_name,
+                    title=title,
                     caption="Ecco la tua traccia EDM! 🔥🎧"
                 )
             
             os.remove(filename)
             await status_message.delete()
         else:
-            await status_message.edit_text("❌ Download fallito. Il flusso audio non è stato salvato.")
+            await status_message.edit_text("❌ Errore nel salvataggio del file sul server.")
 
     except Exception as e:
         print(f"Errore: {e}")
-        await status_message.edit_text("💥 Errore durante il download dal server cloud.")
+        await status_message.edit_text("💥 Il server ha rifiutato la richiesta. Prova con un'altra traccia.")
         for f in os.listdir('.'):
             if f.startswith(f"track_{chat_id}"):
                 os.remove(f)

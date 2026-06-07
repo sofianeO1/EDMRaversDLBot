@@ -26,13 +26,14 @@ async def download_spotify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     output_filename = f"track_{chat_id}.webm" 
 
     # Configurazione LEGGERA per evitare l'uso di FFmpeg a tutti i costi
+        # Configurazione PULITA per scaricare l'audio nativo senza FFmpeg
     ydl_opts = {
-        # Scarica direttamente l'audio migliore già pronto senza convertirlo (evita FFmpeg)
-        'format': 'bestaudio/ Richmond /best',
+        'format': 'bestaudio/best',  # <--- Corretto qui!
         'outtmpl': f"track_{chat_id}.%(ext)s",
         'noplaylist': True,
         'quiet': True,
     }
+
 
     try:
         # Usiamo il link di Spotify come chiave di ricerca text-based su YouTube Music/YouTube

@@ -1,4 +1,4 @@
-app = import os
+import os
 import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes

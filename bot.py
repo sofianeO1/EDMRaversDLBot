@@ -1,4 +1,4 @@
-import os
+app = import os
 import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -16,25 +16,25 @@ async def download_spotify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     
     if "spotify.com" not in url:
-        await update.message.reply_text("❌ Per favore, inviami un link valido.")
+        await update.message.reply_text("❌ Per favore, inviami un link valido di Spotify.")
         return
 
     status_message = await update.message.reply_text("🔄 Download in corso direttamente dal server cloud...")
     chat_id = update.message.chat_id
 
-    # Configurazione nativa: scarica direttamente l'audio senza conversioni FFmpeg
+    # Configurazione ultra-leggera: bypassa YouTube e usa SoundCloud
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': f"track_{chat_id}.%(ext)s",
         'noplaylist': True,
         'quiet': True,
-        'default_search': 'ytsearch', # Se il link fallisce, lo usa come ricerca testo
+        'default_search': 'scsearch', # Forza la ricerca su SoundCloud per evitare i ban IP
     }
 
     try:
         loop = asyncio.get_event_loop()
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Passiamo il link direttamente a yt-dlp che ha già i suoi sistemi interni per decifrare Spotify
+            # Passiamo il link: yt-dlp estrarrà il titolo e lo cercherà su SoundCloud
             info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=True))
             
             if 'entries' in info:

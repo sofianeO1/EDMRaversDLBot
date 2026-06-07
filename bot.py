@@ -19,55 +19,57 @@ async def download_spotify(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Per favore, inviami un link valido di Spotify.")
         return
 
-    status_message = await update.message.reply_text("🔄 Elaborazione traccia in corso... Un attimo di pazienza.")
+    status_message = await update.message.reply_text("🔄 Elaborazione traccia in corso... Cerco l'audio migliore.")
     chat_id = update.message.chat_id
-    output_filename = f"track_{chat_id}"
-    final_mp3 = f"{output_filename}.mp3"
+    
+    # Usiamo un nome file standard senza estensioni forzate da ffmpeg
+    output_filename = f"track_{chat_id}.webm" 
 
-    # Configurazione di yt-dlp per scaricare solo l'audio in MP3
+    # Configurazione LEGGERA per evitare l'uso di FFmpeg a tutti i costi
     ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': output_filename,
+        # Scarica direttamente l'audio migliore già pronto senza convertirlo (evita FFmpeg)
+        'format': 'bestaudio/ Richmond /best',
+        'outtmpl': f"track_{chat_id}.%(ext)s",
         'noplaylist': True,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        # Questo forza l'uso di ffprobe/ffmpeg integrato se presente o salta errori di sistema
         'quiet': True,
     }
 
     try:
-        if os.path.exists(final_mp3):
-            os.remove(final_mp3)
+        # Usiamo il link di Spotify come chiave di ricerca text-based su YouTube Music/YouTube
+        # Questo evita che yt-dlp provi a usare plugin Spotify esterni che falliscono
+        search_query = f"ytsearch:{url}"
 
-        # Utilizziamo yt-dlp per cercare ed estrarre l'audio usando il link spotify come ricerca testuale o diretta
-        # Nota: yt-dlp cercherà in automatico l'equivalente audio migliore
         loop = asyncio.get_event_loop()
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Eseguiamo il download in modo non bloccante
-            await loop.run_in_executor(None, lambda: ydl.download([url]))
+            info = await loop.run_in_executor(None, lambda: ydl.extract_info(search_query, download=True))
+            # Recuperiamo il nome esatto del file scaricato
+            if 'entries' in info and len(info['entries']) > 0:
+                filename = ydl.prepare_filename(info['entries'][0])
+            else:
+                filename = ydl.prepare_filename(info)
 
-        if os.path.exists(final_mp3):
-            await status_message.edit_text("📤 Download completato! Invio l'MP3...")
+        if os.path.exists(filename):
+            await status_message.edit_text("📤 File trovato! Invio in corso...")
             
-            with open(final_mp3, 'rb') as audio_file:
+            with open(filename, 'rb') as audio_file:
+                # Spediamo come documento audio generico, Telegram lo leggerà come player musicale!
                 await update.message.reply_audio(
                     audio=audio_file,
                     caption="Ecco la tua traccia EDM! 🔥🎧"
                 )
             
-            os.remove(final_mp3)
+            os.remove(filename)
             await status_message.delete()
         else:
-            await status_message.edit_text("❌ Impossibile convertire il brano. Riprova tra un attimo.")
+            await status_message.edit_text("❌ Impossibile trovare un flusso audio compatibile.")
 
     except Exception as e:
         print(f"Errore: {e}")
-        await status_message.edit_text("💥 Errore durante l'estrazione audio su Railway.")
-        if os.path.exists(final_mp3):
-            os.remove(final_mp3)
+        await status_message.edit_text("💥 Errore di estrazione. Prova con un'altra traccia.")
+        # Pulizia file residui
+        for f in os.listdir('.'):
+            if f.startswith(f"track_{chat_id}"):
+                os.remove(f)
 
 app = Application.builder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
